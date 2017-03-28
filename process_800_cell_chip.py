@@ -175,6 +175,11 @@ def align_sequences(fastq_filenames_list, star_path, output_dir):
         #subprocess.check_call(["cd", _temp_dir])
         #subprocess.check_call(['module','load','star/2.5.0b'])
         subprocess.check_call(['STAR','--runThreadN','1','--runMode','alignReads','--genomeDir', star_path,'--readFilesIn', _filename,'--outFileNamePrefix', _filename_prefix,'--outSAMtype','BAM','SortedByCoordinate','--quantMode','GeneCounts','--outSAMstrandField','intronMotif'])
+        out_tab_filename = _filename_prefix + "SJ.out.tab"
+        if os.path.exists(out_tab_filename):
+            subprocess.check_call(['STAR','--runThreadN','1','--runMode','alignReads','--genomeDir', star_path,'--readFilesIn', _filename,'--outFileNamePrefix', _filename_prefix,'--outSAMtype','BAM','SortedByCoordinate','--quantMode','GeneCounts', '--sjdbFileChrStartEnd', out_tab_filename, '--outSAMstrandField','intronMotif'])
+        else:
+            sys.exit("Could not find tab file for STAR pass 2")
 
 
 # In[ ]:
