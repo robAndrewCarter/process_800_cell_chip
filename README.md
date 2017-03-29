@@ -38,7 +38,11 @@ End with an example of getting some data out of the system or using it for a lit
 
 ## Running the tests
 
-Explain how to run the automated tests for this system
+The test folder contains a STAR-indexed genome of chromosomes - and - under the folder test/STAR_GENOME
+Reads in the fastq folder test/FASTQ/ derive from 2 samples, each with coverage across two genes on each chromosome.
+The test scripts run_tests.py under test/ runs the full script on this dataset and ensures that the resulting count matrix
+assigns the reads to the correct samples, collapses reads using the UMIs, and derives the correct count matrix.
+
 
 ### Break down into end to end tests
 
@@ -76,7 +80,7 @@ We use [SemVer](http://semver.org/) for versioning. For the versions available, 
 
 ## Authors
 
-* **Billie Thompson** - *Initial work* - [PurpleBooth](https://github.com/PurpleBooth)
+* **Rob Carter** - *Initial work* - (https://github.com/PurpleBooth)
 
 See also the list of [contributors](https://github.com/your/project/contributors) who participated in this project.
 
@@ -86,8 +90,10 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 
 ## Acknowledgments
 
-* Hat tip to anyone who's code was used
-* Inspiration
-* etc
+* Hat tip to - - for the mapping between cell barcode 6mer and row number
+
+## References
+
+
 
 
