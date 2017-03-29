@@ -173,11 +173,12 @@ def align_sequences(fastq_filenames_list, star_path, output_dir):
         _temp_star2_dir = os.path.join(output_dir, _filename_prefix + "_star2")
         _filename_star1_prefix = os.path.join(_temp_star1_dir, _filename_prefix)
         _filename_star2_prefix = os.path.join(_temp_star2_dir, _filename_prefix)
-        subprocess.check_call(["mkdir", _temp_dir])
+        subprocess.check_call(["mkdir", _temp_star1_dir])
         #subprocess.check_call(["cd", _temp_dir])
         #subprocess.check_call(['module','load','star/2.5.0b'])
         subprocess.check_call(['STAR','--runThreadN','1','--runMode','alignReads','--genomeDir', star_path,'--readFilesIn', _filename,'--outFileNamePrefix', _filename_star1_prefix,'--outSAMtype','BAM','SortedByCoordinate','--quantMode','GeneCounts','--outSAMstrandField','intronMotif'])
         out_tab_filename = _filename_prefix + "SJ.out.tab"
+        subprocess.check_call(["mkdir", _temp_star2_dir])
         if os.path.exists(out_tab_filename):
             subprocess.check_call(['STAR','--runThreadN','1','--runMode','alignReads','--genomeDir', star_path,'--readFilesIn', _filename,'--outFileNamePrefix', _filename_star2_prefix,'--outSAMtype','BAM','SortedByCoordinate','--quantMode','GeneCounts', '--sjdbFileChrStartEnd', out_tab_filename, '--outSAMstrandField','intronMotif'])
         else:
