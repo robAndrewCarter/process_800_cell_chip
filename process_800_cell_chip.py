@@ -91,10 +91,10 @@ def add_umis_to_fastq_reads(read1_fastq_filename, read2_fastq_filename, umi_star
     r1_outfilename = os.path.join(output_dir, re.sub(".fastq$", "_umi_labelled.fastq", os.path.basename(read1_fastq_filename)))
     r2_outfilename = os.path.join(output_dir, re.sub(".fastq$", "_umi_labelled.fastq", os.path.basename(read2_fastq_filename)))
     #Zero-based coordinates
-    ssh_command = ['umi_tools', 'extract', '--bc-pattern={}'.format('N'*umi_start + 'X'*(umi_end - umi_start + 1)), '-I', read1_fastq_filename, '-S', r1_outfilename, '--read2-in={}'.format(read2_fastq_filename), '--read2-out={}'.format(r2_outfilename)]
+    ssh_command = ['umi_tools', 'extract', '--bc-pattern={}'.format('X'*umi_start + 'N'*(umi_end - umi_start + 1)), '-I', read1_fastq_filename, '-S', r1_outfilename, '--read2-in={}'.format(read2_fastq_filename), '--read2-out={}'.format(r2_outfilename)]
     print ssh_command
     if subprocess.check_call(ssh_command):
-        sys.exit("Problem running cumi_tools")
+        sys.exit("Problem running umi_tools")
     return(r1_outfilename, r2_outfilename)
 
 
