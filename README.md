@@ -11,6 +11,9 @@ These instructions will get you a copy of the project up and running on your loc
 * python (developed on python 2.7.8)
 * UMI-tools ()
 * STAR (developed using STAR 2.5.0b)
+* pandas
+* HTSeq-count
+* samtools
 
 Additionally, an indexed reference genome in STAR format is required
 
