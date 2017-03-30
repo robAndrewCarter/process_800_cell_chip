@@ -4,7 +4,8 @@
 # In[1]:
 
 from Bio import SeqIO, SeqRecord, Seq
-import regex, os, sys, re, subprocess, argparse, logging
+import pandas as pd
+import regex, os, sys, re, subprocess, argparse, logging, shutil
 
 
 # In[9]:
@@ -22,6 +23,7 @@ def parse_arguments():
     parser.add_argument('--umi_end', type=int, help='end coordinate of umi in read2')
     parser.add_argument('--output_dir', type=str, help='output directory')
     parser.add_argument('--output_format_string', type=str, help='format string for naming files after splitting by barcode')
+    parser.add_argument('--gff_filename', type=str, help='path to gff file used in STAR alignment and in htseq-count')
 
     parser.add_argument('STAR_path', type=str, help='path to STAR index directory')
     
@@ -29,6 +31,14 @@ def parse_arguments():
     args.temp_dir = os.path.join(args.output_dir, args.sample_name)
     return args
 
+def check_paths_and_setup(args):
+    if os.path.exists(args.temp_dir):
+        logging.info("Temp directory {} exists. Removing it.".format(args.temp_dir))
+        try:
+            shutil.rmtree(args.temp_dir)
+        except Exception:
+            sys.exit("Cannot delete folder. Exiting")
+    return True
 
 # Set up global variables that would be given on command line if this is ever converted to a script
 
@@ -167,6 +177,16 @@ def demultiplex_umi_labelled_fastq_files(cell_barcoded_umi_labelled_fastq_filena
 # In[ ]:
 
 def align_sequences(fastq_filenames_list, star_path, output_dir):
+    '''
+    Aligns a list of fastq files to the specified genomes using STAR's 2pass alignment.
+    The resulting BAM files are also indexed
+
+    Returns:
+
+    a list of bam file paths corresponding to the 2nd pass of the STAR alignment
+    '''
+
+    aligned_star_pass2_bam_filenames_list = []
     for _filename in fastq_filenames_list:
         _filename_prefix = re.sub("\..+", "", os.path.basename(_filename))
         _temp_star1_dir = os.path.join(output_dir, _filename_prefix + "_star1")
@@ -183,6 +203,57 @@ def align_sequences(fastq_filenames_list, star_path, output_dir):
             subprocess.check_call(['STAR','--runThreadN','1','--runMode','alignReads','--genomeDir', star_path,'--readFilesIn', _filename,'--outFileNamePrefix', _filename_star2_prefix,'--outSAMtype','BAM','SortedByCoordinate','--quantMode','GeneCounts', '--sjdbFileChrStartEnd', out_tab_filename, '--outSAMstrandField','intronMotif'])
         else:
             sys.exit("Could not find tab file for STAR pass 2")
+        _star_pass2_bamfile = _filename_star2_prefix + "Aligned.sortedByCoord.out.bam"
+        if os.path.exists(_star_pass2_bamfile):
+            aligned_star_pass2_bam_filenames_list.append(_star_pass2_bamfile)
+            try:
+                subprocess.check_call(["samtools", "index", _star_pass2_bamfile])
+            except Exception:
+                sys.exit("Could not run samtools index {}".format(_star_pass2_bamfile))
+        else:
+            sys.exit("Could not find bam file {}".format(_star_pass2_bamfile))
+    return(aligned_star_pass2_bam_filenames_list)
+
+def dedup_bam_files(bam_filenames_list, output_dir):
+    deduped_bam_filenames_list = []
+    for _bam_filename in bam_filenames_list:
+        _deduped_bam_filename = os.path.join(output_dir, re.sub("\.bam$", "_deduped.bam", os.path.basename(_bam_filename)))
+        _deduped_log_filename = os.path.join(output_dir, re.sub("\.bam$", "_deduped.log", os.path.basename(_bam_filename)))
+        try:
+            subprocess.check_call(['umi_tools', 'dedup', '-I', _bam_filename, '-S', _deduped_bam_filename, '-L', _deduped_log_filename])
+            deduped_bam_filenames_list.append(_deduped_bam_filename)
+        except Exception:
+            sys.exit('Unable to successfully run uni_tools dedup')
+    return(deduped_bam_filenames_list)
+        
+def get_gene_counts_using_htseq(bam_filenames_list, gff_filename, output_dir):
+    htseq_filenames_list = []
+    for _bam_filename in bam_filenames_list:
+        _htseq_filename = os.path.join(output_dir, re.sub("\.bam$", "_htseq.tsv", os.path.basename(_bam_filename)))
+        #_htseq_log_filename = os.path.join(output_dir, re.sub("\.bam$", "_htseq.log", os.path.basename(_bam_filename)))
+        _command = ['htseq-count', '-f', 'bam', '-s', 'no', _bam_filename, gff_filename]
+        try:
+            _htseq_output = subprocess.check_output(_command)
+        except Exception:
+            sys.exit('Unable to successfully run htseq-count: {}'.format(" ".join(_command)))
+        try:
+            _fh = open(_htseq_filename, 'w')
+            _fh.writelines(_htseq_output)
+            _fh.close()
+        except:
+            sys.exit('Unable to successfully write htseq files')
+        htseq_filenames_list.append(_htseq_filename)
+    return(htseq_filenames_list)
+
+
+def merge_and_write_htseq_counts(htseq_filenames_list, output_dir):
+    df_list = []
+    for _htseq_filename in htseq_filenames_list:
+        htseq_counts_df = pd.read_csv(_htseq_filename, sep = '\t', index_col= 0, header = None, names= [re.sub('\..+$', '', os.path.basename(_htseq_filename))])
+        htseq_counts_df.index = [re.sub("\..+$", "", _entry) for _entry in htseq_counts_df.index]
+        df_list.append(htseq_counts_df)
+    merged_df = pd.concat(df_list, axis = 1)
+    merged_df.T.to_csv(os.path.join(output_dir, args.sample_name + "_samples_gene_counts.tsv"), sep = '\t')
 
 
 # In[ ]:
@@ -190,6 +261,7 @@ def align_sequences(fastq_filenames_list, star_path, output_dir):
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     args = parse_arguments()
+    check_paths_and_setup(args)
     #create temp directory
     try:
         os.mkdir(args.temp_dir)
@@ -199,5 +271,7 @@ if __name__ == '__main__':
     logging.info("UMI sequences added to files {} and {} from {} and {}, respectively".format(r1_umi_fastq_path,r2_umi_fastq_path,args.read1, args.read2))
 
     file_manager_info_dict = demultiplex_umi_labelled_fastq_files(r1_umi_fastq_path, r2_umi_fastq_path, barcode_to_row_dict, args.barcode_start, args.barcode_end, args.output_format_string, args.temp_dir)
-    align_sequences(file_manager_info_dict['demultiplexed_umi_labelled_filenames'], args.STAR_path, args.temp_dir)
-
+    aligned_bam_filenames = align_sequences(file_manager_info_dict['demultiplexed_umi_labelled_filenames'], args.STAR_path, args.temp_dir)
+    deduped_bam_filenames = dedup_bam_files(aligned_bam_filenames, args.temp_dir)
+    htseq_count_filenames = get_gene_counts_using_htseq(deduped_bam_filenames, args.gff_filename, args.temp_dir)
+    merge_and_write_htseq_counts(htseq_count_filenames, args.output_dir)
