@@ -15,6 +15,7 @@ def parse_arguments():
     Generate sample-specific bam files from paired fastq files with cell-barcodes and UMIs.''')
     parser.add_argument('read1', type=str, help='path to read1')
     parser.add_argument('read2', type=str, help='path to read2')
+    parser.add_argument('STAR_path', type=str, help='path to STAR index directory')
     parser.add_argument('--sample_name', type=str, help='name of sample. Used for file and directory naming')
     parser.add_argument('--barcode_mm', type=int, help='Number of mismatches allowed between cell barcodes')
     parser.add_argument('--barcode_start', type=int, help='start coordinate of barcode in read1')
@@ -24,8 +25,6 @@ def parse_arguments():
     parser.add_argument('--output_dir', type=str, help='output directory')
     parser.add_argument('--output_format_string', type=str, help='format string for naming files after splitting by barcode')
     parser.add_argument('--gff_filename', type=str, help='path to gff file used in STAR alignment and in htseq-count')
-
-    parser.add_argument('STAR_path', type=str, help='path to STAR index directory')
     
     args = parser.parse_args()
     args.temp_dir = os.path.join(args.output_dir, args.sample_name)
@@ -220,7 +219,7 @@ def dedup_bam_files(bam_filenames_list, output_dir):
         _deduped_bam_filename = os.path.join(output_dir, re.sub("\.bam$", "_deduped.bam", os.path.basename(_bam_filename)))
         _deduped_log_filename = os.path.join(output_dir, re.sub("\.bam$", "_deduped.log", os.path.basename(_bam_filename)))
         try:
-            subprocess.check_call(['umi_tools', 'dedup', '-I', _bam_filename, '-S', _deduped_bam_filename, '-L', _deduped_log_filename])
+            subprocess.check_call(['umi_tools', 'dedup', '-v', '10', '-I', _bam_filename, '-S', _deduped_bam_filename, '-L', _deduped_log_filename])
             deduped_bam_filenames_list.append(_deduped_bam_filename)
         except Exception:
             sys.exit('Unable to successfully run uni_tools dedup')
