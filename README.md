@@ -1,6 +1,6 @@
 # Process the 800 cell IFC from Fluidigm
 
-The fluidigm 800-cell IFC for the C1 has both barcodes and UMIs in read 1, whereas read 2 contains the actual sequence of a polyadenylated RNA. This script parses read1, generating cell-specific fastq files for read2 with UMIs appended to the read headers in read2. These Each demultiplexed sample in then aligned to a reference genome using STAR () and PCR duplicates are removed using UMI-tools ().
+The fluidigm 800-cell IFC for the C1 has both barcodes and UMIs in read 1, whereas read 2 contains the actual sequence of a polyadenylated RNA. This script parses read1, generating cell-specific fastq files for read2 with UMIs appended to the read headers in read2. These Each demultiplexed sample in then aligned to a reference genome using STAR () and PCR duplicates are removed using UMI-tools (Smith **et al.** 2017).
 
 ## Getting Started
 
@@ -25,6 +25,12 @@ Currentlly, just run the script and ensure the dependencies above are satisfied.
 
 Limited testing has been performed, but it requires files that are too large for github. This will be remedied later.
 
+## To do:
+
+* Create tests with small memory fingerprint
+* fill out function documentation
+* Extend logging to keep track of read counts
+
 ## Authors
 
 * **Rob Carter** - (r.andrew.carter@gmail.com)
@@ -38,4 +44,9 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 * Hat tip to - - for the mapping between cell barcode 6mer and row number
 
 ## References
-	fill in
+	Smith T, Heger A, Sudbery I. 2017. UMI-tools: modeling sequencing errors in Unique
+	Molecular Identifiers to improve quantification accuracy. Genome Res. 27:491-499
+	
+	Dobin A, Davis CA, Schlesinger F, Drenkow J, Zaleski C, Jha S, Batut P, Chaisson M, 
+	Gingeras TR. 2013. STAR: ultrafast universal RNA-seq aligner. Bioinformatics. 29:15-21
+	
