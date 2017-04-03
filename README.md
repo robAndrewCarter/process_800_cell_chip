@@ -1,4 +1,4 @@
-# Process  barcoded sequencing libraris with UMIs
+# Process  barcoded sequencing libraries with UMIs
 
 This script processes libraries that contain cell barcodes and UMIs in one read, and 3' sequences in the other. This script parses read1, generating cell-specific fastq files for read2 with UMIs appended to the read headers in read2. These Each demultiplexed sample in then aligned to a reference genome using STAR (Dobin *et al.*, 2013) and PCR duplicates are removed using UMI-tools (Smith *et al.* 2017).
 
