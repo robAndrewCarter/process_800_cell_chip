@@ -1,10 +1,12 @@
-# Process the 800 cell IFC from Fluidigm
+# Process  barcoded sequencing libraris with UMIs
 
-The fluidigm 800-cell IFC for the C1 has both barcodes and UMIs in read 1, whereas read 2 contains the actual sequence of a polyadenylated RNA. This script parses read1, generating cell-specific fastq files for read2 with UMIs appended to the read headers in read2. These Each demultiplexed sample in then aligned to a reference genome using STAR () and PCR duplicates are removed using UMI-tools (Smith **et al.** 2017).
+This script processes libraries that contain cell barcodes and UMIs in one read, and 3' sequences in the other. This script parses read1, generating cell-specific fastq files for read2 with UMIs appended to the read headers in read2. These Each demultiplexed sample in then aligned to a reference genome using STAR (Dobin *et al.*, 2013) and PCR duplicates are removed using UMI-tools (Smith *et al.* 2017).
 
 ## Getting Started
 
-These instructions will get you a copy of the project up and running on your local machine for development and testing purposes. See deployment for notes on how to deploy the project on a live system.
+For usage, use
+
+`process_800_cell_chip.py -h`
 
 ### Prerequisites
 
@@ -19,7 +21,7 @@ Additionally, an indexed reference genome in STAR format is required as well as 
 
 ### Installing
 
-Currentlly, just run the script and ensure the dependencies above are satisfied.
+Currently, just run the script and ensure the dependencies above are satisfied.
 
 ## Running the tests
 
