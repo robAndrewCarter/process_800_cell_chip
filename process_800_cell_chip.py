@@ -5,7 +5,7 @@
 
 from Bio import SeqIO, SeqRecord, Seq
 import pandas as pd
-import regex, os, sys, re, subprocess, argparse, logging, shutil
+import regex, os, sys, re, subprocess, argparse, logging, shutil, pysam
 
 
 # In[9]:
@@ -199,60 +199,123 @@ def align_sequences(fastq_filenames_list, star_path, output_dir):
         out_tab_filename = _filename_star1_prefix + "SJ.out.tab"
         subprocess.check_call(["mkdir", _temp_star2_dir])
         if os.path.exists(out_tab_filename):
-            subprocess.check_call(['STAR','--runThreadN','1','--runMode','alignReads','--genomeDir', star_path,'--readFilesIn', _filename,'--outFileNamePrefix', _filename_star2_prefix,'--outSAMtype','BAM','SortedByCoordinate','--quantMode','GeneCounts', '--sjdbFileChrStartEnd', out_tab_filename, '--outSAMstrandField','intronMotif'])
+            subprocess.check_call(['STAR','--runThreadN','1','--runMode','alignReads','--genomeDir', star_path,'--readFilesIn', _filename,'--outFileNamePrefix', _filename_star2_prefix,'--outSAMtype','BAM','SortedByCoordinate','--quantMode','TranscriptomeSAM', 'GeneCounts', '--sjdbFileChrStartEnd', out_tab_filename, '--outSAMstrandField','intronMotif'])
         else:
             sys.exit("Could not find tab file for STAR pass 2")
-        _star_pass2_bamfile = _filename_star2_prefix + "Aligned.sortedByCoord.out.bam"
+        _star_pass2_bamfile = _filename_star2_prefix + "Aligned.toTranscriptome.out.bam"
         if os.path.exists(_star_pass2_bamfile):
             aligned_star_pass2_bam_filenames_list.append(_star_pass2_bamfile)
-            try:
-                subprocess.check_call(["samtools", "index", _star_pass2_bamfile])
-            except Exception:
-                sys.exit("Could not run samtools index {}".format(_star_pass2_bamfile))
-        else:
-            sys.exit("Could not find bam file {}".format(_star_pass2_bamfile))
+        #    try:
+        #        subprocess.check_call(["samtools", "index", _star_pass2_bamfile])
+        #    except Exception:
+        #        sys.exit("Could not run samtools index {}".format(_star_pass2_bamfile))
+        #else:
+        #    sys.exit("Could not find bam file {}".format(_star_pass2_bamfile))
     return(aligned_star_pass2_bam_filenames_list)
 
-def dedup_bam_files(bam_filenames_list, output_dir):
+def tag_transcriptome_bams(transcriptome_bam_filenames_list, gtf_filename, output_dir):
+    '''
+    '''
+    try:
+        gtf_df = pd.read_csv(gtf_filename, sep = "\t", header = None)
+    except Exception:
+        sys.exit('cannot read gtf file')
+    info_col = gtf_df.loc[:,8]
+    info_valid_col = info_col[info_col.str.contains('gene_id "[A-Z01-9.]+"; transcript_id "[A-Z01-9.]+".+')]
+    split_df = info_valid_col.str.extract('gene_id "([A-Z01-9.]+)"; transcript_id "([A-Z01-9.]+)".+', expand = True)
+    split_nodups_df = split_df.drop_duplicates()
+    split_nodups_df.columns = ['gene','transcript']
+    transcript_to_gene_dict = split_nodups_df.set_index('transcript')['gene'].to_dict()
+    tagged_transcriptome_filenames_list = []
+    for _transcriptome_bam_filename in transcriptome_bam_filenames_list:
+        bam_obj = pysam.AlignmentFile(_transcriptome_bam_filename, 'rb')
+        out_filename = os.path.join(output_dir, re.sub("\..+", "", os.path.basename(_transcriptome_bam_filename)) + "_tagged.bam")
+        tagged_transcriptome_filenames_list.append(out_filename)
+        new_bam_obj = pysam.AlignmentFile(out_filename, 'wb', template = bam_obj)
+        for _read in bam_obj:
+            _transcript_name = bam_obj.get_reference_name(_read.reference_id)
+            _gene_name = transcript_to_gene_dict[_transcript_name]
+            _read.set_tag('GN', _gene_name, value_type= 'Z')
+            new_bam_obj.write(_read)
+        new_bam_obj.close()
+        sort_and_index_bam_filename(out_filename)
+    return({'tagged_transcriptome_filenames' : tagged_transcriptome_filenames_list, 'ordered_gene_names' : sorted(list(set(transcript_to_gene_dict.values())))})
+
+def sort_and_index_bam_filename(bam_filename):
+    temp_sorted_filename = re.sub('\.[^.]+$', '', os.path.basename(bam_filename)) + "_sorted.bam.tmp"
+    try:
+        subprocess.check_call(['samtools', 'sort', '-o', temp_sorted_filename, bam_filename])
+    except Exception:
+        sys.exit('Failed to sort {}'.format(bam_filename))
+    try:
+        subprocess.check_call(['mv', temp_sorted_filename, bam_filename])
+    except:
+        sys.exit('Failed to rename {}'.format(temp_sorted_filename))
+    try:
+        subprocess.check_call(['samtools', 'index', bam_filename])
+    except:
+        sys.exit('Failed to index {}'.format(bam_filename))
+    return True
+        
+        
+
+
+
+def dedup_bam_files(bam_tagged_filenames_list, output_dir):
     deduped_bam_filenames_list = []
-    for _bam_filename in bam_filenames_list:
+    for _bam_filename in bam_tagged_filenames_list:
         _deduped_bam_filename = os.path.join(output_dir, re.sub("\.bam$", "_deduped.bam", os.path.basename(_bam_filename)))
         _deduped_log_filename = os.path.join(output_dir, re.sub("\.bam$", "_deduped.log", os.path.basename(_bam_filename)))
         try:
-            subprocess.check_call(['umi_tools', 'dedup', '-v', '10', '-I', _bam_filename, '-S', _deduped_bam_filename, '-L', _deduped_log_filename])
+            subprocess.check_call(['umi_tools', 'dedup', '-v', '10', '--gene-tag=GN', '-I', _bam_filename, '-S', _deduped_bam_filename, '-L', _deduped_log_filename])
             deduped_bam_filenames_list.append(_deduped_bam_filename)
         except Exception:
             sys.exit('Unable to successfully run uni_tools dedup')
     return(deduped_bam_filenames_list)
         
-def get_gene_counts_using_htseq(bam_filenames_list, gff_filename, output_dir):
-    htseq_filenames_list = []
+def get_gene_counts_from_tagged_bam_files(bam_filenames_list, ordered_genes_list, output_dir):
+    counts_df_list = []
     for _bam_filename in bam_filenames_list:
-        _htseq_filename = os.path.join(output_dir, re.sub("\.bam$", "_htseq.tsv", os.path.basename(_bam_filename)))
-        #_htseq_log_filename = os.path.join(output_dir, re.sub("\.bam$", "_htseq.log", os.path.basename(_bam_filename)))
-        _command = ['htseq-count', '-f', 'bam', '-s', 'no', _bam_filename, gff_filename]
         try:
-            _htseq_output = subprocess.check_output(_command)
-        except Exception:
-            sys.exit('Unable to successfully run htseq-count: {}'.format(" ".join(_command)))
-        try:
-            _fh = open(_htseq_filename, 'w')
-            _fh.writelines(_htseq_output)
-            _fh.close()
+            bam_obj = pysam.AlignmentFile(_bam_filename, 'rb')
+            read_to_gene_dict = {}
+            for _read in bam_obj:
+                if _read.query_name in read_to_gene_dict:
+                    read_to_gene_dict[_read.query_name].append( _read.get_tag('GN'))
+                else:
+                    read_to_gene_dict[_read.query_name] = [_read.get_tag('GN')]
         except:
-            sys.exit('Unable to successfully write htseq files')
-        htseq_filenames_list.append(_htseq_filename)
-    return(htseq_filenames_list)
+            sys.exit('problem reading bam file {}'.format(_bam_filename))
 
 
-def merge_and_write_htseq_counts(htseq_filenames_list, output_dir):
-    df_list = []
-    for _htseq_filename in htseq_filenames_list:
-        htseq_counts_df = pd.read_csv(_htseq_filename, sep = '\t', index_col= 0, header = None, names= [re.sub('\..+$', '', os.path.basename(_htseq_filename))])
-        htseq_counts_df.index = [re.sub("\..+$", "", _entry) for _entry in htseq_counts_df.index]
-        df_list.append(htseq_counts_df)
-    merged_df = pd.concat(df_list, axis = 1)
-    merged_df.T.to_csv(os.path.join(output_dir, args.sample_name + "_samples_gene_counts.tsv"), sep = '\t')
+        gene_count_dict = {_gene:0 for _gene in ordered_genes_list}
+
+        singlet_count = 0
+        multiplet_count = 0
+
+        for _read_id, gene_list in read_to_gene_dict.iteritems():
+            if len(gene_list) > 1:
+                multiplet_count += 1
+            elif len(gene_list) == 1:
+                singlet_count += 1
+                gene_count_dict[gene_list[0]] += 1
+
+        counts_df = pd.DataFrame.from_dict(gene_count_dict, orient = 'index').sort_index().rename(columns = {0: os.path.join(output_dir, re.sub("\..+", "", os.path.basename(_bam_filename)))})
+        counts_df_list.append(counts_df)
+        try:
+            counts_df.to_csv(os.path.join(output_dir, re.sub("\..+", "", os.path.basename(_bam_filename)) + "_gene_counts.tsv"), sep = '\t', header = False, index = False)
+        except:
+            sys.exit('Cannot open file for writing')
+    return counts_df_list
+
+def merge_and_write_counts(count_df_list, sample_name, output_dir):
+    #merge count DataFrames and write to file as a matrix
+    merged_count_df = pd.concat(counts_df_list, axis = 1, ignore_index=False).T 
+    try:
+        merged_count_df.to_csv(os.path.join(output_dir, sample_name + "_samples_gene_counts.tsv"), sep = '\t')
+    except Exception:
+        sys.exit('Cannot write matrix file')
+    return True
 
 
 # In[ ]:
@@ -271,6 +334,7 @@ if __name__ == '__main__':
 
     file_manager_info_dict = demultiplex_umi_labelled_fastq_files(r1_umi_fastq_path, r2_umi_fastq_path, barcode_to_row_dict, args.barcode_start, args.barcode_end, args.output_format_string, args.temp_dir)
     aligned_bam_filenames = align_sequences(file_manager_info_dict['demultiplexed_umi_labelled_filenames'], args.STAR_path, args.temp_dir)
-    deduped_bam_filenames = dedup_bam_files(aligned_bam_filenames, args.temp_dir)
-    htseq_count_filenames = get_gene_counts_using_htseq(deduped_bam_filenames, args.gff_filename, args.temp_dir)
-    merge_and_write_htseq_counts(htseq_count_filenames, args.output_dir)
+    tagged_files_and_genes_dict = tag_transcriptome_bams(aligned_bam_filenames, args.gff_filename, args.temp_dir)
+    deduped_bam_filenames = dedup_bam_files(tagged_files_and_genes_dict['tagged_transcriptome_filenames'], args.temp_dir)
+    counts_df_list = get_gene_counts_from_tagged_bam_files(deduped_bam_filenames, tagged_files_and_genes_dict['ordered_gene_names'], args.temp_dir)
+    merge_and_write_counts(counts_df_list, args.sample_name, args.output_dir)
