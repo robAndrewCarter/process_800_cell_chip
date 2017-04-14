@@ -260,8 +260,9 @@ def tag_bams(aligned_bam_filenames, intervals_to_geneid_filename, output_dir):
         except:
             sys.exit("Can't process bams")
         for _read in in_bam_obj:
-            _read.set_tag("GN", ",".join(list(set(_read.get_tag('GN').split(',')))))
-            out_bam_obj.write(_read)
+            if _read.has_tag('GN'):
+                _read.set_tag("GN", ",".join(list(set(_read.get_tag('GN').split(',')))))
+                out_bam_obj.write(_read)
         in_bam_obj.close()
         out_bam_obj.close()
         try:
