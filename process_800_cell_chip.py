@@ -25,6 +25,7 @@ def parse_arguments():
     parser.add_argument('--output_dir', type=str, help='output directory')
     parser.add_argument('--output_format_string', type=str, help='format string for naming files after splitting by barcode')
     parser.add_argument('--gff_filename', type=str, help='path to gff file used in STAR alignment and in htseq-count')
+    parser.add_argument('--overwrite_option', default='exit', type=str, choices = ['exit', 'write', 'read'], help='Behavior of program when previously created output files are encountered. Options = [exit (default), write, read]')
     parser.add_argument('--intervals_to_geneid_filename',  type = str, default = None, help = 'BED formated file mapping exonic intervals to gene_ids. If None, the file is created from the gff_filename')
     
     args = parser.parse_args()
@@ -33,11 +34,12 @@ def parse_arguments():
 
 def check_paths_and_setup(args):
     if os.path.exists(args.temp_dir):
-        logging.info("Temp directory {} exists. Removing it.".format(args.temp_dir))
-        try:
-            shutil.rmtree(args.temp_dir)
-        except Exception:
-            sys.exit("Cannot delete folder. Exiting")
+        #logging.info("Temp directory {} exists. Removing it.".format(args.temp_dir))
+        #try:
+        #    shutil.rmtree(args.temp_dir)
+        #except Exception:
+        #    sys.exit("Cannot delete folder. Exiting")
+        pass
     return True
 
 # Set up global variables that would be given on command line if this is ever converted to a script
@@ -100,6 +102,8 @@ def add_umis_to_fastq_reads(read1_fastq_filename, read2_fastq_filename, umi_star
     '''
     r1_outfilename = os.path.join(output_dir, re.sub(".fastq$", "_umi_labelled.fastq", os.path.basename(read1_fastq_filename)))
     r2_outfilename = os.path.join(output_dir, re.sub(".fastq$", "_umi_labelled.fastq", os.path.basename(read2_fastq_filename)))
+    if use_existing_files([r1_outfilename, r2_outfilename], args.overwrite_option):
+        return(r1_outfilename, r2_outfilename)
     #Zero-based coordinates
     ssh_command = ['umi_tools', 'extract', '--bc-pattern={}'.format('X'*umi_start + 'N'*(umi_end - umi_start + 1)), '-I', read1_fastq_filename, '-S', r1_outfilename, '--read2-in={}'.format(read2_fastq_filename), '--read2-out={}'.format(r2_outfilename)]
     print ssh_command
@@ -107,18 +111,39 @@ def add_umis_to_fastq_reads(read1_fastq_filename, read2_fastq_filename, umi_star
         sys.exit("Problem running umi_tools")
     return(r1_outfilename, r2_outfilename)
 
+def use_existing_files(file_list, write_option):
+    if all([os.path.exists(_file) for _file in file_list]):
+        if write_option == 'exit':
+            sys.exit("At least one of {} exists. To overwrite, use overwrite_option = write. To use existing files, use overwrite_option = read".format(",".join(file_list)))
+        if write_option == 'read':
+            return True
+        if write_option == 'write':
+            return False
+    else:
+        return False
+    
 
 # In[2]:
 
 class FileManager():
-    def __init__(self, mapping_dict, filename_format):
+    def __init__(self, mapping_dict, filename_format, overwrite_option = 'exit'):
         self.mapping_dict = mapping_dict
         self.filename_format = filename_format
         self.barcode_to_filehandle_dict = {}
         self.valid_barcodes = mapping_dict.keys()
         self.file_writing_stats_dict = {_barcode:0 for _barcode in mapping_dict.keys()} 
         self.num_files_written = 0
-        self.nonempty_filenames = []
+        possible_filenames = [self.filename_format.format(pos=_bc) for _bc in self.barcode_to_filehandle_dict.keys()]
+        self.nonempty_filenames = [_fn for _fn in possible_filenames if os.path.exists(_fn)]
+        self.status = None
+        if len(self.nonempty_filenames) > 0:
+            if overwrite_option == 'exit':
+                sys.exit("The following files already exist:{}. Use overwrite_option = read or overwrite_option = write".format(",".join(self.nonempty_filenames))) 
+            if overwrite_option == 'read':
+                self.status='read'
+            if overwrite_option == 'write':
+                self.nonempty_filenames = []
+                self.status='write'
     def write_seq(self, seq_rec, barcode):
         if not barcode in self.barcode_to_filehandle_dict:
             try:
@@ -150,6 +175,9 @@ class FileManager():
 
 def demultiplex_umi_labelled_fastq_files(cell_barcoded_umi_labelled_fastq_filename, umi_labelled_fastq_transcript_filename, mapping_dict, barcode_start, barcode_end, output_file_format_string, output_dir):
     file_manager = FileManager(filename_format=os.path.join(output_dir, output_file_format_string), mapping_dict = mapping_dict)
+    if file_manager.status == 'read':
+        return {'stats': None, 'demultiplexed_umi_labelled_filenames': file_manager.get_nonempty_filenames()}
+
     r1_gen = SeqIO.parse(cell_barcoded_umi_labelled_fastq_filename, 'fastq')
     r2_gen = SeqIO.parse(umi_labelled_fastq_transcript_filename, 'fastq')
     
@@ -193,17 +221,19 @@ def align_sequences(fastq_filenames_list, star_path, output_dir):
         _temp_star2_dir = os.path.join(output_dir, _filename_prefix + "_star2")
         _filename_star1_prefix = os.path.join(_temp_star1_dir, _filename_prefix)
         _filename_star2_prefix = os.path.join(_temp_star2_dir, _filename_prefix)
-        subprocess.check_call(["mkdir", _temp_star1_dir])
-        #subprocess.check_call(["cd", _temp_dir])
-        #subprocess.check_call(['module','load','star/2.5.0b'])
-        subprocess.check_call(['STAR','--runThreadN','1','--runMode','alignReads','--genomeDir', star_path,'--readFilesIn', _filename,'--outFileNamePrefix', _filename_star1_prefix,'--outSAMtype','BAM','SortedByCoordinate','--quantMode','GeneCounts','--outSAMstrandField','intronMotif'])
-        out_tab_filename = _filename_star1_prefix + "SJ.out.tab"
-        subprocess.check_call(["mkdir", _temp_star2_dir])
-        if os.path.exists(out_tab_filename):
-            subprocess.check_call(['STAR','--runThreadN','1','--runMode','alignReads','--genomeDir', star_path,'--readFilesIn', _filename,'--outFileNamePrefix', _filename_star2_prefix,'--outSAMtype','BAM','SortedByCoordinate','--quantMode', 'GeneCounts', '--sjdbFileChrStartEnd', out_tab_filename, '--outSAMstrandField','intronMotif'])
-        else:
-            sys.exit("Could not find tab file for STAR pass 2")
         _star_pass2_bamfile = _filename_star2_prefix + "Aligned.sortedByCoord.out.bam"
+        if not use_existing_files([_temp_star1_dir], args.overwrite_option):
+            subprocess.check_call(["mkdir", _temp_star1_dir])
+            #subprocess.check_call(["cd", _temp_dir])
+            #subprocess.check_call(['module','load','star/2.5.0b'])
+            subprocess.check_call(['STAR','--runThreadN','1','--runMode','alignReads','--genomeDir', star_path,'--readFilesIn', _filename,'--outFileNamePrefix', _filename_star1_prefix,'--outSAMtype','BAM','SortedByCoordinate','--quantMode','GeneCounts','--outSAMstrandField','intronMotif'])
+        if not use_existing_files([_temp_star2_dir], args.overwrite_option):
+            out_tab_filename = _filename_star1_prefix + "SJ.out.tab"
+            subprocess.check_call(["mkdir", _temp_star2_dir])
+            if os.path.exists(out_tab_filename):
+                subprocess.check_call(['STAR','--runThreadN','1','--runMode','alignReads','--genomeDir', star_path,'--readFilesIn', _filename,'--outFileNamePrefix', _filename_star2_prefix,'--outSAMtype','BAM','SortedByCoordinate','--quantMode', 'GeneCounts', '--sjdbFileChrStartEnd', out_tab_filename, '--outSAMstrandField','intronMotif'])
+            else:
+                sys.exit("Could not find tab file for STAR pass 2")
         if os.path.exists(_star_pass2_bamfile):
             aligned_star_pass2_bam_filenames_list.append(_star_pass2_bamfile)
             try:
@@ -213,34 +243,6 @@ def align_sequences(fastq_filenames_list, star_path, output_dir):
         else:
             sys.exit("Could not find bam file {}".format(_star_pass2_bamfile))
     return(aligned_star_pass2_bam_filenames_list)
-
-#def tag_transcriptome_bams(transcriptome_bam_filenames_list, gtf_filename, output_dir):
-#    '''
-#    '''
-#    try:
-#        gtf_df = pd.read_csv(gtf_filename, sep = "\t", header = None)
-#    except Exception:
-#        sys.exit('cannot read gtf file')
-#    info_col = gtf_df.loc[:,8]
-#    info_valid_col = info_col[info_col.str.contains('gene_id "[A-Z01-9.]+"; transcript_id "[A-Z01-9.]+".+')]
-#    split_df = info_valid_col.str.extract('gene_id "([A-Z01-9.]+)"; transcript_id "([A-Z01-9.]+)".+', expand = True)
-#    split_nodups_df = split_df.drop_duplicates()
-#    split_nodups_df.columns = ['gene','transcript']
-#    transcript_to_gene_dict = split_nodups_df.set_index('transcript')['gene'].to_dict()
-#    tagged_transcriptome_filenames_list = []
-#    for _transcriptome_bam_filename in transcriptome_bam_filenames_list:
-#        bam_obj = pysam.AlignmentFile(_transcriptome_bam_filename, 'rb')
-#        out_filename = os.path.join(output_dir, re.sub("\..+", "", os.path.basename(_transcriptome_bam_filename)) + "_tagged.bam")
-#        tagged_transcriptome_filenames_list.append(out_filename)
-#        new_bam_obj = pysam.AlignmentFile(out_filename, 'wb', template = bam_obj)
-#        for _read in bam_obj:
-#            _transcript_name = bam_obj.get_reference_name(_read.reference_id)
-#            _gene_name = transcript_to_gene_dict[_transcript_name]
-#            _read.set_tag('GN', _gene_name, value_type= 'Z')
-#            new_bam_obj.write(_read)
-#        new_bam_obj.close()
-#        sort_and_index_bam_filename(out_filename)
-#    return({'tagged_transcriptome_filenames' : tagged_transcriptome_filenames_list, 'ordered_gene_names' : sorted(list(set(transcript_to_gene_dict.values())))})
 
 def tag_bams(aligned_bam_filenames, intervals_to_geneid_filename, output_dir):
     tagged_bam_filenames_list = []
@@ -404,7 +406,8 @@ if __name__ == '__main__':
     check_paths_and_setup(args)
     #create temp directory
     try:
-        os.mkdir(args.temp_dir)
+        if not os.path.exists(args.temp_dir):
+            os.mkdir(args.temp_dir)
     except Exception:
         sys.exit('Unable to create directory')
     (r1_umi_fastq_path,r2_umi_fastq_path) = add_umis_to_fastq_reads(args.read1, args.read2, args.umi_start, args.umi_end, args.temp_dir)
