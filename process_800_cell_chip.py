@@ -1,13 +1,9 @@
 # coding: utf-8
 
-# In[1]:
 
 from Bio import SeqIO, SeqRecord, Seq
 import pandas as pd
 import regex, os, sys, re, subprocess, argparse, logging, shutil, pysam
-
-
-# In[9]:
 
 
 def parse_arguments():
@@ -78,21 +74,6 @@ def parse_arguments():
     return args
 
 
-def check_paths_and_setup(args):
-    if os.path.exists(args.temp_dir):
-        # logging.info("Temp directory {} exists. Removing it.".format(args.temp_dir))
-        # try:
-        #    shutil.rmtree(args.temp_dir)
-        # except Exception:
-        #    sys.exit("Cannot delete folder. Exiting")
-        pass
-    return True
-
-
-# Set up global variables that would be given on command line if this is ever converted to a script
-
-# In[130]:
-
 barcode_to_row_dict = dict(
     CACGTA="ROW01",
     CTCACA="ROW02",
@@ -136,9 +117,6 @@ barcode_to_row_dict = dict(
     GAGCTA="ROW40",
     NONE="undetermined",
 )
-
-
-# In[17]:
 
 
 def add_umis_to_fastq_reads(
@@ -197,9 +175,6 @@ def use_existing_files(file_list, write_option):
             return False
     else:
         return False
-
-
-# In[2]:
 
 
 class FileManager:
@@ -270,9 +245,6 @@ class FileManager:
             _fh.close()
 
 
-# In[3]:
-
-
 def demultiplex_umi_labelled_fastq_files(
     cell_barcoded_umi_labelled_fastq_filename,
     umi_labelled_fastq_transcript_filename,
@@ -327,9 +299,6 @@ def demultiplex_umi_labelled_fastq_files(
         "stats": file_manager.get_stats(),
         "demultiplexed_umi_labelled_filenames": file_manager.get_nonempty_filenames(),
     }
-
-
-# In[ ]:
 
 
 def align_sequences(fastq_filenames_list, star_path, output_dir):
@@ -662,13 +631,9 @@ def merge_and_write_htseq_counts(htseq_filenames_list, output_dir):
     )
 
 
-# In[ ]:
-
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     args = parse_arguments()
-    check_paths_and_setup(args)
-    # create temp directory
     try:
         if not os.path.exists(args.temp_dir):
             os.makedirs(args.temp_dir)
