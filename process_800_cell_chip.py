@@ -1,12 +1,12 @@
 # coding: utf-8
 
-
+from typing import Tuple, List
 from Bio import SeqIO, SeqRecord, Seq
 import pandas as pd
 import regex, os, sys, re, subprocess, argparse, logging, shutil, pysam
 
 
-def parse_arguments():
+def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="""
     Generate sample-specific bam files from paired fastq files with cell-barcodes and UMIs."""
@@ -120,8 +120,12 @@ barcode_to_row_dict = dict(
 
 
 def add_umis_to_fastq_reads(
-    read1_fastq_filename, read2_fastq_filename, umi_start, umi_end, output_dir
-):
+    read1_fastq_filename: str,
+    read2_fastq_filename: str,
+    umi_start: int,
+    umi_end: int,
+    output_dir: str,
+) -> Tuple[str, str]:
     """
     Uses UMI-tools to add UMIs to read headers in both reads.
     The UMI sequences are assumed to be on read1.
@@ -161,7 +165,7 @@ def add_umis_to_fastq_reads(
     return (r1_outfilename, r2_outfilename)
 
 
-def use_existing_files(file_list, write_option):
+def use_existing_files(file_list: List[str], write_option: str = "exit") -> bool:
     if all([os.path.exists(_file) for _file in file_list]):
         if write_option == "exit":
             sys.exit(
@@ -178,7 +182,12 @@ def use_existing_files(file_list, write_option):
 
 
 class FileManager:
-    def __init__(self, mapping_dict, filename_format, overwrite_option="exit"):
+    def __init__(
+        self,
+        mapping_dict: dict,
+        filename_format: str,
+        overwrite_option: str = "exit",
+    ):
         self.mapping_dict = mapping_dict
         self.filename_format = filename_format
         self.barcode_to_filehandle_dict = {}
@@ -206,7 +215,7 @@ class FileManager:
                 self.nonempty_filenames = []
                 self.status = "write"
 
-    def write_seq(self, seq_rec, barcode):
+    def write_seq(self, seq_rec: SeqRecord, barcode: str) -> None:
         if not barcode in self.barcode_to_filehandle_dict:
             try:
                 seq_filename = self.filename_format.format(
@@ -234,26 +243,26 @@ class FileManager:
             temp_fh = self.barcode_to_filehandle_dict[barcode]
             sys.exit("Error writing to file {}".format(temp_fh.name))
 
-    def get_stats(self):
+    def get_stats(self) -> dict:
         return self.file_writing_stats_dict
 
-    def get_nonempty_filenames(self):
+    def get_nonempty_filenames(self) -> List[str]:
         return self.nonempty_filenames
 
-    def close_filehandles(self):
+    def close_filehandles(self) -> None:
         for _fh in self.barcode_to_filehandle_dict.values():
             _fh.close()
 
 
 def demultiplex_umi_labelled_fastq_files(
-    cell_barcoded_umi_labelled_fastq_filename,
-    umi_labelled_fastq_transcript_filename,
-    mapping_dict,
-    barcode_start,
-    barcode_end,
-    output_file_format_string,
-    output_dir,
-):
+    cell_barcoded_umi_labelled_fastq_filename: str,
+    umi_labelled_fastq_transcript_filename: str,
+    mapping_dict: dict,
+    barcode_start: int,
+    barcode_end: int,
+    output_file_format_string: str,
+    output_dir: str,
+) -> str:
     file_manager = FileManager(
         filename_format=os.path.join(output_dir, output_file_format_string),
         mapping_dict=mapping_dict,
@@ -301,7 +310,9 @@ def demultiplex_umi_labelled_fastq_files(
     }
 
 
-def align_sequences(fastq_filenames_list, star_path, output_dir):
+def align_sequences(
+    fastq_filenames_list: List[str], star_path: str, output_dir: str
+) -> List[str]:
     """
     Aligns a list of fastq files to the specified genomes using STAR's 2pass alignment.
     The resulting BAM files are also indexed
@@ -386,7 +397,9 @@ def align_sequences(fastq_filenames_list, star_path, output_dir):
     return aligned_star_pass2_bam_filenames_list
 
 
-def tag_bams(aligned_bam_filenames, intervals_to_geneid_filename, output_dir):
+def tag_bams(
+    aligned_bam_filenames: List[str], intervals_to_geneid_filename: str, output_dir: str
+) -> List[str]:
     tagged_bam_filenames_list = []
     for _bam_filename in aligned_bam_filenames:
         tagged_bam_filename = os.path.join(
@@ -433,7 +446,7 @@ def tag_bams(aligned_bam_filenames, intervals_to_geneid_filename, output_dir):
     return tagged_bam_filenames_list
 
 
-def sort_and_index_bam_filename(bam_filename):
+def sort_and_index_bam_filename(bam_filename: str) -> bool:
     temp_sorted_filename = (
         re.sub("\.[^.]+$", "", os.path.basename(bam_filename)) + "_sorted.bam.tmp"
     )
@@ -454,7 +467,7 @@ def sort_and_index_bam_filename(bam_filename):
     return True
 
 
-def dedup_bam_files(bam_tagged_filenames_list, output_dir):
+def dedup_bam_files(bam_tagged_filenames_list: List[str], output_dir: str) -> List[str]:
     deduped_bam_filenames_list = []
     for _bam_filename in bam_tagged_filenames_list:
         _deduped_bam_filename = os.path.join(
@@ -489,8 +502,8 @@ def dedup_bam_files(bam_tagged_filenames_list, output_dir):
 
 
 def get_gene_counts_from_tagged_bam_files(
-    bam_filenames_list, ordered_genes_list, output_dir
-):
+    bam_filenames_list: List[str], ordered_genes_list: List[str], output_dir: str
+) -> List[pd.DataFrame]:
     counts_df_list = []
     for _bam_filename in bam_filenames_list:
         try:
@@ -514,7 +527,7 @@ def get_gene_counts_from_tagged_bam_files(
                 multiplet_count += 1
             elif len(gene_list) == 1:
                 singlet_count += 1
-                gene_count_dict[gene_list[0]] += 1
+                gene_count_dict[gene_List[0]] += 1
 
         counts_df = (
             pd.DataFrame.from_dict(gene_count_dict, orient="index")
@@ -544,9 +557,12 @@ def get_gene_counts_from_tagged_bam_files(
     return counts_df_list
 
 
-def merge_and_write_counts(count_df_list, sample_name, output_dir):
+## !! TODO: Currently not used, so ensure that it will not be needed eventually, then delete.
+def merge_and_write_counts(
+    count_df_list: List[pd.DataFrame], sample_name: str, output_dir: str
+) -> bool:
     # merge count DataFrames and write to file as a matrix
-    merged_count_df = pd.concat(counts_df_list, axis=1, ignore_index=False).T
+    merged_count_df = pd.concat(count_df_list, axis=1, ignore_index=False).T
     try:
         merged_count_df.to_csv(
             os.path.join(output_dir, sample_name + "_samples_gene_counts.tsv"), sep="\t"
@@ -557,8 +573,8 @@ def merge_and_write_counts(count_df_list, sample_name, output_dir):
 
 
 def get_intervals_to_geneid_filename(
-    intervals_to_geneid_filename, gff_filename, output_dir
-):
+    intervals_to_geneid_filename: str, gff_filename: str, output_dir: str
+) -> str:
     if not intervals_to_geneid_filename:
         try:
             temp_exons_df = pd.read_csv(gff_filename, sep="\t", header=None)
@@ -585,7 +601,9 @@ def get_intervals_to_geneid_filename(
         return intervals_to_geneid_filename
 
 
-def get_gene_counts_using_htseq(bam_filenames_list, gff_filename, output_dir):
+def get_gene_counts_using_htseq(
+    bam_filenames_list: List[str], gff_filename: str, output_dir: str
+) -> List[str]:
     htseq_filenames_list = []
     for _bam_filename in bam_filenames_list:
         _htseq_filename = os.path.join(
@@ -610,7 +628,9 @@ def get_gene_counts_using_htseq(bam_filenames_list, gff_filename, output_dir):
     return htseq_filenames_list
 
 
-def merge_and_write_htseq_counts(htseq_filenames_list, output_dir):
+def merge_and_write_htseq_counts(
+    htseq_filenames_list: List[str], output_dir: str
+) -> None:
     df_list = []
     for _htseq_filename in htseq_filenames_list:
         htseq_counts_df = pd.read_csv(
